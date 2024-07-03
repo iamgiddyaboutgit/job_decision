@@ -6,6 +6,11 @@ Article: Trimmed Harrell-Davis quantile estimator based on the
     highest density interval of the given width
 Author: Andrey Akinshin
 URL: https://doi.org/10.1080/03610918.2022.2050396
+
+and
+
+Akinshin, A. (2023). Weighted quantile estimators. arXiv preprint arXiv:2304.07265.
+URL: https://arxiv.org/pdf/2304.07265
 """
 from scipy import stats
 import numpy as np
@@ -55,6 +60,72 @@ def truncated_beta_cdf(x, alpha, beta, l, r):
     trunc_beta_cdf_vals = (beta_cdf_x - beta_cdf_l)/(beta_cdf_r - beta_cdf_l)
 
     return trunc_beta_cdf_vals
+
+def get_alpha_param(n, p):
+    """Get the alpha parameter to use for the
+    Harrell-Davis quantile estimator.
+
+    Args:
+        n: Effective sample size.
+        p: Quantiles.
+    """
+    return (n + 1)*p
+
+def get_beta_param(n, p):
+    """Get the beta parameter to use for the
+    Harrell-Davis quantile estimator.
+
+    Args:
+        n: Effective sample size.
+        p: Quantiles.
+    """
+    return (n + 1)*(1 - p)
+
+def beta_mode(alpha, beta):
+    """Get the mode of a Beta distribution
+    
+    with parameters alpha and beta.
+    See: https://en.wikipedia.org/wiki/Beta_distribution
+
+    For the case where alpha == beta, return None
+    even though technically the mode is any value
+    in the interval (0, 1).
+    """
+    if alpha > 1 and beta > 1:
+        # unimodal
+        mode = (alpha - 1)/(alpha + beta - 2)
+    elif alpha < 1 and beta < 1:
+        # bimodal
+        mode = {0, 1}
+    elif alpha < 1 and beta > 1:
+        mode = 0
+    elif alpha > 1 and beta < 1:
+        mode = 1
+    else:
+        mode = None
+
+    return mode
+
+def get_beta_hdi(alpha, beta, width):
+    """Get the Highest Density Interval (HDI) from
+    
+    a Beta distribution with parameters `alpha` and `beta`.
+    'The HDI is the interval which contains the required 
+    mass such that all points within the interval
+    have a higher probability density than points outside 
+    the interval.' 
+    See: https://cran.r-project.org/web/packages/HDInterval/HDInterval.pdf
+    Our implementation is a little different from the usual
+    because we do not specify the probability mass, but
+    rather the desired width of the HDI.
+
+    Args:
+        alpha: concentration parameter. alpha > 0.
+        beta: concentration parameter. beta > 0.
+        width: D in paper 'Trimmed Harrell-Davis . . .'
+            0 <= width <= 1
+    """
+
 
 ##############################
 # getBetaHdi <- function(a, b, width) {
