@@ -206,38 +206,40 @@ class JustinDistribution(dist.Distribution):
 class JustinDistribution_2(dist.MixtureGeneral):
     """Class for modeling time-to-failure."""
     arg_constraints = {
-        
+        "modes": dist.constraints.greater_than(3)
     }
     support = dist.constraints.nonnegative
-    def __init__(self, k):
+    def __init__(self, modes=jnp.arange(5, 30, 2)):
         """
         Args:
-            weights: len(weights) == 7.
-                The first 5 entries in weights are for the Gompertz
-                parts.
-                weights[5] is for the flatline part.
-                weights[6] is for the lognormal part. 
+            modes: positive integers greater than 3
 
         """
         support = dist.constraints.nonnegative
-        modes = jnp.arange(7, 42, 7)
         component_dists = []
+    
+        # Create all of the Chi-Squared distributions.
         for mode in modes:
-            # See: https://en.wikipedia.org/wiki/Weibull_distribution
-            lambda_ = mode/((k - 1.0)/k)**(1.0 / k)
+            df = mode + 2
             component_dists.append(
-                dist.Weibull(
-                    scale=mode,
-                    concentration=k
-                )
+                dist.Chi2(df=df)
             )
+        # Weight the Chi-Squared distributions.
+        num_chisqs = len(modes)
+        chisq_weights = jnp.ones(shape=(num_chisqs,))
+        chisq_rel_weight = 0.5
 
         component_dists.append(
-            dist.TruncatedCauchy(loc=0, scale=4, low=7)
+                dist.Exponential(rate=1.0/30.0)
+            )
+        exp_rel_weight = jnp.array([0.5])
+        probs = jnp.append(
+            chisq_rel_weight*chisq_weights/num_chisqs,
+            exp_rel_weight
         )
    
         mixture_proportions = dist.Categorical(
-            probs=jnp.ones(shape=(len(component_dists))) / len(component_dists)
+            probs=probs
         )
 
         super().__init__(
