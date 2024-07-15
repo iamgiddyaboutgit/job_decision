@@ -37,6 +37,23 @@ def get_sr_weights(n:int) -> np.ndarray:
 
     return w
 
+
+class MixtureGeneralWithEnumSupport(dist.MixtureGeneral):
+# https://realpython.com/python-super/#an-overview-of-pythons-super-function
+# https://github.com/transferwise/tw-experimentation/blob/578b030b3d6ef09d67c0d5ed0921c95703363507/tw_experimentation/bayes/numpyro_monkeypatch.py#L71
+    """Class to be able to create mixture distributions
+    
+    with discrete distributions in NumPyro.
+    """
+    @property
+    def has_enumerate_support(self):
+        return True
+
+    def enumerate_support(self, expand=True):
+        # Assume the 0th distribution in the mixture 
+        # has a method of enumerate_support.
+        return self.component_distributions[0].enumerate_support(expand=expand)
+
 # https://realpython.com/python-super/#an-overview-of-pythons-super-function
 class Pert(dist.Beta):
     """Class for modified-PERT distribution from numpyro
