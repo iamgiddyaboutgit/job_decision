@@ -157,7 +157,6 @@ class JustinDistribution(dist.Distribution):
     
 
     def cum_haz(self, t):
-        """P(T > t)"""
         y_0 = self.y_0
         k_1 = self.k_1
         t_1 = self.t_1
@@ -251,12 +250,11 @@ class JustinDistribution_2(dist.Distribution):
         # in the mixture model of all the PDFs.
         tot = num_pdfs * (num_pdfs + 1)/2
         weights = (1/tot)*np.arange(num_pdfs, 0, -1)
-        
+
         return weights @ pdf_vals
 
 
     def cum_haz(self, t):
-        """P(T > t)"""
         y_0 = self.y_0
         k_1 = self.k_1
         t_1 = self.t_1
