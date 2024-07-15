@@ -222,11 +222,15 @@ class JustinDistribution_2(dist.Distribution):
         parts_for_haz = []
         for i in range(num_parts_for_haz):
             multiple = 7*(i + 1)
-            parts_for_haz[i] = dist.Gompertz(
-                concentration=1.0/np.exp(multiple), 
-                rate=1
+            parts_for_haz.append(
+                dist.Gompertz(
+                    concentration=1.0/np.exp(multiple), 
+                    rate=1
+                )
             )
-            parts_for_haz[i] = {
+
+        parts_for_haz.append(
+            {
                 "flatline_haz_part": lambda x: jnp.where(
                         x > 7,
                         jnp.array([0.05]),
@@ -239,6 +243,7 @@ class JustinDistribution_2(dist.Distribution):
                         jnp.array([0])
                     )
             }
+        ) 
             
         # tot is calculated for some customized scaling
         # of all the parts of the hazard function.
@@ -248,46 +253,64 @@ class JustinDistribution_2(dist.Distribution):
         # Give half weight to the flatline part.
         weights[-1] = 0.5
 
+        self.num_gompertz_parts = num_gompertz_parts
         self.parts_for_haz = parts_for_haz
+        self.num_parts_for_haz = num_parts_for_haz
         self.weights = weights
-        
+
         super().__init__(batch_shape=(), event_shape=())
 
     def sample(self, key, sample_shape=()):
         raise NotImplementedError
     
     def hazard(self, t):
-        num_gompertz_pdfs = 5
-        num_uni_pdfs = 1
-        num_pdfs = num_gompertz_pdfs + num_uni_pdfs
+        parts_for_haz = self.parts_for_haz
+        num_parts_for_haz = self.num_parts_for_haz
+        num_gompertz_parts = self.num_gompertz_parts 
+        weights = self.weights 
 
-        # Initialize pdf_vals (to be filled later)
-        pdf_vals = np.zeros(shape=(num_pdfs, len(t)))
-
-        # Get the PDF values from multiple PDFs.
-        for i in range(num_gompertz_pdfs):
-            multiple = 7*(i + 1)
-            pdf_vals[i, :] = jnp.exp(
-                dist.Gompertz(
-                    concentration=1.0/np.exp(multiple), 
-                    rate=1
-                ).log_prob(value=t)
+        unweighted_haz_vals = np.zeros(shape=(num_parts_for_haz, len(t)))
+        for i in range(num_gompertz_parts):
+            unweighted_haz_vals[i] = jnp.exp(
+                parts_for_haz[i].log_prob(value=t)
             )
-            next_row = i + 1
 
-        pdf_vals[next_row, :] = jnp.exp(
-            dist.Uniform(
-                low=7, 
-                high=len(t)
-            ).log_prob(value=t)
-        )
+        unweighted_haz_vals[-1] = parts_for_haz[-1]["flatline_haz_part"](t)
+
+        return weights @ unweighted_haz_vals
+
+        ###############
+        # num_gompertz_pdfs = 5
+        # num_uni_pdfs = 1
+        # num_pdfs = num_gompertz_pdfs + num_uni_pdfs
+
+        # # Initialize pdf_vals (to be filled later)
+        # pdf_vals = np.zeros(shape=(num_pdfs, len(t)))
+
+        # # Get the PDF values from multiple PDFs.
+        # for i in range(num_gompertz_pdfs):
+        #     multiple = 7*(i + 1)
+        #     pdf_vals[i, :] = jnp.exp(
+        #         dist.Gompertz(
+        #             concentration=1.0/np.exp(multiple), 
+        #             rate=1
+        #         ).log_prob(value=t)
+        #     )
+        #     next_row = i + 1
+
+        # pdf_vals[next_row, :] = jnp.exp(
+        #     dist.Uniform(
+        #         low=7, 
+        #         high=len(t)
+        #     ).log_prob(value=t)
+        # )
    
-        # tot is calculated for some customized scaling
-        # in the mixture model of all the PDFs.
-        tot = num_pdfs * (num_pdfs + 1)/2
-        weights = (1/tot)*np.arange(num_pdfs, 0, -1)
+        # # tot is calculated for some customized scaling
+        # # in the mixture model of all the PDFs.
+        # tot = num_pdfs * (num_pdfs + 1)/2
+        # weights = (1/tot)*np.arange(num_pdfs, 0, -1)
 
-        return weights @ pdf_vals
+        # return weights @ pdf_vals
 
 
     def cum_haz(self, t):
