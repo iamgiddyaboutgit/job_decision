@@ -203,16 +203,13 @@ class JustinDistribution(dist.Distribution):
         return jnp.log(h) - cum_hazard
     
 
-class JustinDistribution_2(dist.Distribution):
+class JustinDistribution_2(dist.MixtureGeneral):
     """Class for modeling time-to-failure."""
     arg_constraints = {
         
     }
-    # We put that the support is positive even though
-    # it is really all non-negative real numbers.
-    # I don't think it makes a difference.
     support = dist.constraints.nonnegative
-    def __init__(self, weights):
+    def __init__(self, k):
         """
         Args:
             weights: len(weights) == 7.
@@ -222,114 +219,40 @@ class JustinDistribution_2(dist.Distribution):
                 weights[6] is for the lognormal part. 
 
         """
-        num_gompertz_parts = 5
-        # num_flatline_parts = 1
-        num_lognormal_parts = 1
-        # num_parts_for_haz = num_gompertz_parts + num_flatline_parts + num_lognormal_parts
-        num_parts_for_haz = num_gompertz_parts + num_lognormal_parts
-
-        normalized_weights = weights / jnp.sum(weights)
-        parts_for_haz = []
-        for i in range(num_gompertz_parts):
-            multiple = 7*(i + 1)
-            parts_for_haz.append(
-                dist.Gompertz(
-                    concentration=1.0/np.exp(multiple), 
-                    rate=1
+        support = dist.constraints.nonnegative
+        modes = jnp.arange(7, 42, 7)
+        component_dists = []
+        for mode in modes:
+            # See: https://en.wikipedia.org/wiki/Weibull_distribution
+            lambda_ = mode/((k - 1.0)/k)**(1.0 / k)
+            component_dists.append(
+                dist.Weibull(
+                    scale=mode,
+                    concentration=k
                 )
             )
 
-        # parts_for_haz.append(
-        #     {
-        #         "flatline_haz_part": lambda x: jnp.where(
-        #                 x > 7,
-        #                 10**(-6)*x,
-        #                 jnp.array([0])
-        #             ),
-                
-        #         "flatline_cum_haz_part": lambda x: jnp.where(
-        #                 x > 7,
-        #                 10**(-6) * x**2 - (10**(-6) * 7**2),
-        #                 jnp.array([0])
-        #             )
-        #     }
-        # ) 
-
-        parts_for_haz.append(
-            dist.LogNormal(
-                loc=np.log(14),
-                scale=1
-            )
+        component_dists.append(
+            dist.TruncatedCauchy(loc=0, scale=4, low=7)
         )
-            
-        # self.num_gompertz_parts = num_gompertz_parts
-        # self.num_lognormal_parts = num_lognormal_parts
-        self.num_parts_for_haz = num_parts_for_haz
+   
+        mixture_proportions = dist.Categorical(
+            probs=jnp.ones(shape=(len(component_dists))) / len(component_dists)
+        )
 
-        self.parts_for_haz = parts_for_haz
-        self.weights = normalized_weights
+        super().__init__(
+            mixing_distribution=mixture_proportions, 
+            component_distributions=component_dists,
+            support=support
+        )
 
-        super().__init__(batch_shape=(), event_shape=())
 
-    def sample(self, key, sample_shape=()):
-        raise NotImplementedError
+
+
+
+
+
+
+       
     
-    def hazard(self, t):
-        parts_for_haz = self.parts_for_haz
-        num_parts_for_haz = self.num_parts_for_haz
-        weights = self.weights 
-
-        unweighted_haz_vals = np.zeros(shape=(num_parts_for_haz, len(t)))
-        
-        for i in range(num_parts_for_haz):
-            unweighted_haz_vals[i, :] = jnp.exp(
-                parts_for_haz[i].log_prob(value=t)
-            )
-
-        # unweighted_haz_vals[-2] = parts_for_haz[-2]["flatline_haz_part"](t)
-        # Use the LogNormal parts to get some of the unweighted_haz_vals.
-        # unweighted_haz_vals[num_gompertz_parts:(num_gompertz_parts + num_lognormal_parts), :] = jnp.exp(
-        #     parts_for_haz[-1].log_prob(value=t)
-        # )
-
-        return weights @ unweighted_haz_vals
-
-    def cum_haz(self, t):
-        parts_for_haz = self.parts_for_haz
-        num_parts_for_haz = self.num_parts_for_haz
-        # num_gompertz_parts = self.num_gompertz_parts
-        # num_lognormal_parts = self.num_lognormal_parts
-        weights = self.weights 
-
-        unweighted_cum_haz_vals = np.zeros(shape=(num_parts_for_haz, len(t)))
-        # Use the Gompertz parts to get some of the unweighted_haz_vals.
-        for i in range(num_parts_for_haz):
-            unweighted_cum_haz_vals[i, :] = parts_for_haz[i].cdf(t)
-
-        # unweighted_haz_vals[-2] = parts_for_haz[-2]["flatline_haz_part"](t)
-        # Use the LogNormal parts to get some of the unweighted_haz_vals.
-        # unweighted_cum_haz_vals[num_gompertz_parts:(num_gompertz_parts + num_lognormal_parts), :] = jnp.exp(
-        #     parts_for_haz[-1].log_prob(value=t)
-        # )
-
-        return weights @ unweighted_cum_haz_vals
-    
-
-    def survival(self, t):
-        """P(T > t)"""
-        return jnp.exp(-self.cum_haz(t=t))
-    
-    def cdf(self, t):
-        return 1 - self.survival(t=t)
-
-    def log_prob(self, t):
-        h = self.hazard(t=t)
-        cum_hazard = self.cum_haz(t=t)
-
-        return jnp.log(h) - cum_hazard
-    
-    def pdf(self, t):
-        h = self.hazard(t=t)
-        cum_hazard = self.cum_haz(t=t)
-
-        return h * jnp.exp(-cum_hazard)
+ 
