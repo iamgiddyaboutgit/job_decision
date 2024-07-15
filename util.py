@@ -215,6 +215,42 @@ class JustinDistribution_2(dist.Distribution):
     def __init__(self, ):
         """
         """
+        num_gompertz_parts = 5
+        num_flatline_parts = 1
+        num_parts_for_haz = num_gompertz_parts + num_flatline_parts
+
+        parts_for_haz = []
+        for i in range(num_parts_for_haz):
+            multiple = 7*(i + 1)
+            parts_for_haz[i] = dist.Gompertz(
+                concentration=1.0/np.exp(multiple), 
+                rate=1
+            )
+            parts_for_haz[i] = {
+                "flatline_haz_part": lambda x: jnp.where(
+                        x > 7,
+                        jnp.array([0.05]),
+                        jnp.array([0])
+                    ),
+                
+                "flatline_cum_haz_part": lambda x: jnp.where(
+                        x > 7,
+                        jnp.array([0.05])*(x - 7),
+                        jnp.array([0])
+                    )
+            }
+            
+        # tot is calculated for some customized scaling
+        # of all the parts of the hazard function.
+        tot = num_parts_for_haz * (num_parts_for_haz + 1)
+        weights = np.zeros(shape=(num_parts_for_haz,))
+        weights[0:-1] = (1/tot)*np.arange(num_gompertz_parts, 0, -1)
+        # Give half weight to the flatline part.
+        weights[-1] = 0.5
+
+        self.parts_for_haz = parts_for_haz
+        self.weights = weights
+        
         super().__init__(batch_shape=(), event_shape=())
 
     def sample(self, key, sample_shape=()):
@@ -255,17 +291,7 @@ class JustinDistribution_2(dist.Distribution):
 
 
     def cum_haz(self, t):
-        y_0 = self.y_0
-        k_1 = self.k_1
-        t_1 = self.t_1
-        peak = self.peak
-        t_2 = self.t_2 
-        k_2 = self.k_2 
-        c = self.c
-
-        part_0 = jnp.exp(k_1 * t_1)
-
-        cum_haz_1 = ((y_0 - peak)*(jnp.exp(k_1 * t) - 1) + k_1*(peak - y_0*part_0)*t) / ((1 - part_0)*k_1)
+        cum_haz_1 = dist.Gompertz.cdf
 
         part_1 = ((y_0 - peak)*(part_0 - 1) + k_1*(peak - y_0*part_0)*t_1) / ((1 - part_0)*k_1)
 
