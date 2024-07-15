@@ -212,15 +212,18 @@ class JustinDistribution_2(dist.Distribution):
     # it is really all non-negative real numbers.
     # I don't think it makes a difference.
     support = dist.constraints.nonnegative
-    def __init__(self, ):
+    def __init__(self, weights):
         """
+        Args:
+            weights: len(weights) == 7
         """
         num_gompertz_parts = 5
         num_flatline_parts = 1
-        num_parts_for_haz = num_gompertz_parts + num_flatline_parts
-
+        num_lognormal_parts = 1
+        num_parts_for_haz = num_gompertz_parts + num_flatline_parts + num_lognormal_parts
+        normalized_weights = weights / jnp.sum(weights)
         parts_for_haz = []
-        for i in range(num_parts_for_haz):
+        for i in range(num_gompertz_parts):
             multiple = 7*(i + 1)
             parts_for_haz.append(
                 dist.Gompertz(
@@ -233,25 +236,34 @@ class JustinDistribution_2(dist.Distribution):
             {
                 "flatline_haz_part": lambda x: jnp.where(
                         x > 7,
-                        jnp.array([0.05]),
+                        10**(-6)*x,
                         jnp.array([0])
                     ),
                 
                 "flatline_cum_haz_part": lambda x: jnp.where(
                         x > 7,
-                        jnp.array([0.05])*(x - 7),
+                        10**(-6) * x**2 - (10**(-6) * 7**2),
                         jnp.array([0])
                     )
             }
         ) 
+
+        parts_for_haz.append(
+            dist.LogNormal(
+                loc=np.log(14),
+                scale=1
+            )
+        )
             
         # tot is calculated for some customized scaling
         # of all the parts of the hazard function.
         tot = num_parts_for_haz * (num_parts_for_haz + 1)
         weights = np.zeros(shape=(num_parts_for_haz,))
-        weights[0:-1] = (1/tot)*np.arange(num_gompertz_parts, 0, -1)
-        # Give half weight to the flatline part.
-        weights[-1] = 0.5
+        weights[0:-2] = (1/tot)*np.arange(num_gompertz_parts, 0, -1)
+        # Give quarter weight to the flatline part.
+        weights[-2] = 0.25
+        # Give quarter weight to the lognormal part.
+        weights[-1] = 0.25
 
         self.num_gompertz_parts = num_gompertz_parts
         self.parts_for_haz = parts_for_haz
@@ -275,68 +287,27 @@ class JustinDistribution_2(dist.Distribution):
                 parts_for_haz[i].log_prob(value=t)
             )
 
-        unweighted_haz_vals[-1] = parts_for_haz[-1]["flatline_haz_part"](t)
+        unweighted_haz_vals[-2] = parts_for_haz[-2]["flatline_haz_part"](t)
+
+        unweighted_haz_vals[-1] = jnp.exp(
+            parts_for_haz[-1].log_prob(value=t)
+        )
 
         return weights @ unweighted_haz_vals
 
-        ###############
-        # num_gompertz_pdfs = 5
-        # num_uni_pdfs = 1
-        # num_pdfs = num_gompertz_pdfs + num_uni_pdfs
-
-        # # Initialize pdf_vals (to be filled later)
-        # pdf_vals = np.zeros(shape=(num_pdfs, len(t)))
-
-        # # Get the PDF values from multiple PDFs.
-        # for i in range(num_gompertz_pdfs):
-        #     multiple = 7*(i + 1)
-        #     pdf_vals[i, :] = jnp.exp(
-        #         dist.Gompertz(
-        #             concentration=1.0/np.exp(multiple), 
-        #             rate=1
-        #         ).log_prob(value=t)
-        #     )
-        #     next_row = i + 1
-
-        # pdf_vals[next_row, :] = jnp.exp(
-        #     dist.Uniform(
-        #         low=7, 
-        #         high=len(t)
-        #     ).log_prob(value=t)
-        # )
-   
-        # # tot is calculated for some customized scaling
-        # # in the mixture model of all the PDFs.
-        # tot = num_pdfs * (num_pdfs + 1)/2
-        # weights = (1/tot)*np.arange(num_pdfs, 0, -1)
-
-        # return weights @ pdf_vals
-
-
     def cum_haz(self, t):
-        cum_haz_1 = dist.Gompertz.cdf
+        parts_for_haz = self.parts_for_haz
+        num_parts_for_haz = self.num_parts_for_haz
+        num_gompertz_parts = self.num_gompertz_parts 
+        weights = self.weights 
 
-        part_1 = ((y_0 - peak)*(part_0 - 1) + k_1*(peak - y_0*part_0)*t_1) / ((1 - part_0)*k_1)
-
-        cum_haz_2 = part_1 + peak * (t - t_1)
-
-        part_2 = part_1 + peak * (t_2 - t_1)
-
-        cum_haz_3 = part_2 + (peak - c)/k_2*jnp.exp(k_2*(t - t_2)) + c*t - (peak - c)/k_2 - c*t_2
-
-        cum_haz_2_with_1 = jnp.where(
-            t > t_1,
-            cum_haz_2,
-            cum_haz_1
-        )
-
-        cum_haz_3_with_21 = jnp.where(
-            t > t_2,
-            cum_haz_3,
-            cum_haz_2_with_1
-        )
-
-        return cum_haz_3_with_21
+        unweighted_cum_haz_vals = np.zeros(shape=(num_parts_for_haz, len(t)))
+        for i in range(num_gompertz_parts):
+            unweighted_cum_haz_vals[i] = parts_for_haz[i].cdf(value=t)
+            
+        unweighted_cum_haz_vals[-2] = parts_for_haz[-2]["flatline_haz_part"](t)
+        unweighted_cum_haz_vals[-1] = parts_for_haz[-1].cdf(t)
+        return weights @ unweighted_cum_haz_vals
     
 
     def survival(self, t):
@@ -348,3 +319,9 @@ class JustinDistribution_2(dist.Distribution):
         cum_hazard = self.cum_haz(t=t)
 
         return jnp.log(h) - cum_hazard
+    
+    def pdf(self, t):
+        h = self.hazard(t=t)
+        cum_hazard = self.cum_haz(t=t)
+
+        return h * jnp.exp(-cum_hazard)
