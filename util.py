@@ -127,6 +127,13 @@ class JustinDistribution(dist.MixtureGeneral):
             support=support
         )
 
+    def hazard(self, t):
+        # https://web.stanford.edu/~lutian/coursepdf/unit1.pdf
+        # Assume that the survival function is continuous.
+        pdf_vals = jnp.exp(self.log_prob(value=t))
+        cdf_vals = self.cdf(t)
+        haz = pdf_vals / (1 - cdf_vals)
+        return haz
 
 
 
