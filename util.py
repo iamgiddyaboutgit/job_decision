@@ -255,21 +255,11 @@ class JustinDistribution_2(dist.Distribution):
             )
         )
             
-        # tot is calculated for some customized scaling
-        # of all the parts of the hazard function.
-        tot = num_parts_for_haz * (num_parts_for_haz + 1)
-        weights = np.zeros(shape=(num_parts_for_haz,))
-        weights[0:-2] = (1/tot)*np.arange(num_gompertz_parts, 0, -1)
-        # Give quarter weight to the flatline part.
-        weights[-2] = 0.25
-        # Give quarter weight to the lognormal part.
-        weights[-1] = 0.25
-
         self.num_gompertz_parts = num_gompertz_parts
         self.parts_for_haz = parts_for_haz
         self.num_parts_for_haz = num_parts_for_haz
-        self.weights = weights
-
+        self.weights = normalized_weights
+        
         super().__init__(batch_shape=(), event_shape=())
 
     def sample(self, key, sample_shape=()):
