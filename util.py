@@ -38,6 +38,46 @@ def get_sr_weights(n:int) -> np.ndarray:
     return w
 
 
+def get_csr_weights(
+    p:list
+):
+    """
+    See: A Robustness Study of State-of-the-Art Surrogate
+        Weights for MCDM.
+        https://link.springer.com/content/pdf/10.1007/s10726-016-9494-6.pdf
+    Args:
+        p: importance positions. First, sort the criteria (a.k.a. attributes)
+            by importance in descending order with the most important
+            criteria first.  Assign the most important criteria an 
+            importance position of 1.  A spacing of 0 in the importance
+            positions of two criteria indicates that they are considered
+            equally important.  A spacing of 1 indicates that one criteria
+            is slightly more important than the other.  A spacing
+            of 2 indicates that one criteria
+            is more important than the other. 
+            A spacing
+            of 3 indicates that one criteria
+            is much more important than the other.
+
+    Returns:
+        csr_weights 
+    """
+    N = len(p)
+    Q = p[-1]
+
+    denominator = 0
+    for j in range(N):
+        denominator += 1/p[j]\
+            + (Q + 1 - p[j])/Q
+
+    weights = []
+    for i in range(N):
+        numerator = 1/p[i] + (Q + 1 - p[i])/Q
+        weights.append(numerator/denominator)
+    return weights
+    
+
+
 class MixtureGeneralWithEnumSupport(dist.MixtureGeneral):
 # https://realpython.com/python-super/#an-overview-of-pythons-super-function
 # https://github.com/transferwise/tw-experimentation/blob/578b030b3d6ef09d67c0d5ed0921c95703363507/tw_experimentation/bayes/numpyro_monkeypatch.py#L71
@@ -131,8 +171,14 @@ class JustinDistribution(dist.MixtureGeneral):
         # https://web.stanford.edu/~lutian/coursepdf/unit1.pdf
         # Assume that the survival function is continuous.
         pdf_vals = jnp.exp(self.log_prob(value=t))
-        cdf_vals = self.cdf(t)
-        haz = pdf_vals / (1 - cdf_vals)
+        surv_vals = 1 - self.cdf(t)
+
+        haz = pdf_vals / surv_vals
+        jnp.nan_to_num(
+            x=haz,
+            copy=False,
+            nan=jnp.inf
+        )
         return haz
 
 
